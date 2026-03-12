@@ -38,6 +38,8 @@ cd claude-desktop-rtl-mac
 ./patch.sh --install
 ```
 
+> **Downloaded the ZIP instead of cloning?** You may need to make the script executable first: `chmod +x patch.sh`
+
 That's it. A patched copy is created at `~/Applications/Claude-RTL.app` (your home folder, not `/Applications/`) and launches automatically.
 
 ## Usage
