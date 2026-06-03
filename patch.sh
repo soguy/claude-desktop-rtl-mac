@@ -227,9 +227,30 @@ install_patch() {
     step "Re-signing with ad-hoc signature..."
     log "The original code signature is invalidated by our changes."
     log "An ad-hoc signature allows macOS to run the modified app."
-    codesign --force --deep --sign - "$PATCHED_APP" 2>&1 | while IFS= read -r line; do
-        log "$line"
-    done
+
+    # Preserve entitlements from the original. Without these, features that
+    # check for entitlements at runtime fail — notably Cowork, which calls
+    # @ant/claude-swift's VM check and shows "installation appears to be
+    # corrupted" when com.apple.security.virtualization is missing.
+    #
+    # The three team-id-coupled keys are stripped: they reference Anthropic's
+    # team ID Q6L2SF6YDW and macOS rejects them under an ad-hoc signature.
+    ENTITLEMENTS_FILE="$TMP_DIR/entitlements.plist"
+    mkdir -p "$TMP_DIR"
+    if codesign -d --entitlements :- "$SOURCE_APP" > "$ENTITLEMENTS_FILE" 2>/dev/null && [ -s "$ENTITLEMENTS_FILE" ]; then
+        /usr/libexec/PlistBuddy -c "Delete :com.apple.application-identifier" "$ENTITLEMENTS_FILE" 2>/dev/null || true
+        /usr/libexec/PlistBuddy -c "Delete :com.apple.developer.team-identifier" "$ENTITLEMENTS_FILE" 2>/dev/null || true
+        /usr/libexec/PlistBuddy -c "Delete :keychain-access-groups" "$ENTITLEMENTS_FILE" 2>/dev/null || true
+        log "Preserving entitlements from original (incl. virtualization for Cowork)..."
+        codesign --force --deep --sign - --entitlements "$ENTITLEMENTS_FILE" "$PATCHED_APP" 2>&1 | while IFS= read -r line; do
+            log "$line"
+        done
+    else
+        warn "Could not extract entitlements from original — Cowork will not work."
+        codesign --force --deep --sign - "$PATCHED_APP" 2>&1 | while IFS= read -r line; do
+            log "$line"
+        done
+    fi
     success "App re-signed."
 
     # --- Cleanup temp ---
