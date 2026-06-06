@@ -24,6 +24,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PAYLOAD_FILE="$SCRIPT_DIR/rtl-payload.js"
 ICON_FILE="$SCRIPT_DIR/icon.icns"
+FONTS_DIR="$SCRIPT_DIR/fonts"
+
+# Font used for RTL (Hebrew/Arabic/Persian) text. Vazirmatn is the bundled
+# default, but anyone can pick their own:
+#   * Replace the files in fonts/ with your own .woff2/.woff/.ttf/.otf — they
+#     get embedded so the font works without being installed on the system.
+#   * Or set the family name:  RTL_FONT_FAMILY="B Nazanin" ./patch.sh --install
+#     (with no matching files in fonts/, an already-installed font is used).
+#   * Set RTL_FONT_FAMILY="" to disable font replacement and keep Claude's font.
+RTL_FONT_FAMILY="${RTL_FONT_FAMILY-Vazirmatn}"
 
 SOURCE_APP="/Applications/Claude.app"
 PATCHED_APP="$HOME/Applications/Claude-RTL.app"
@@ -125,6 +135,88 @@ quit_claude_rtl() {
 }
 
 # ---------------------------------------------------------------------------
+# Font injector
+# ---------------------------------------------------------------------------
+# Appends a self-contained IIFE to the given header file that (a) embeds any
+# font files in fonts/ as @font-face rules under $RTL_FONT_FAMILY, and (b)
+# applies that family to RTL-detected text (keeping code monospace). The font
+# is the user's choice: replace the files in fonts/ and/or set RTL_FONT_FAMILY.
+# All CSS uses single quotes so it embeds safely in a double-quoted JS string.
+build_font_injector() {
+    local header="$1"
+
+    # Sanitize the family name: strip characters that would break the CSS/JS string.
+    local family="${RTL_FONT_FAMILY//\"/}"
+    family="${family//\\/}"
+    family="${family//\'/}"
+
+    if [ -z "$family" ]; then
+        log "RTL_FONT_FAMILY is empty — leaving RTL text in Claude's default font."
+        return 0
+    fi
+
+    # Embed each font file in fonts/ as an @font-face for "$family". Weight and
+    # style are guessed from the filename (e.g. "...-Bold", "...-Light-Italic").
+    local face_css=""
+    local embedded=0
+    if [ -d "$FONTS_DIR" ]; then
+        shopt -s nullglob nocaseglob
+        local f
+        for f in "$FONTS_DIR"/*.woff2 "$FONTS_DIR"/*.woff "$FONTS_DIR"/*.ttf "$FONTS_DIR"/*.otf; do
+            [ -f "$f" ] || continue
+            local lc weight style ext fmt mime b64
+            lc=$(basename "$f" | tr '[:upper:]' '[:lower:]')
+
+            weight=400
+            case "$lc" in
+                *thin*)                    weight=100 ;;
+                *extralight*|*ultralight*) weight=200 ;;
+                *light*)                   weight=300 ;;
+                *medium*)                  weight=500 ;;
+                *semibold*|*demibold*)     weight=600 ;;
+                *extrabold*|*ultrabold*)   weight=800 ;;
+                *black*|*heavy*)           weight=900 ;;
+                *bold*)                    weight=700 ;;
+            esac
+
+            style=normal
+            case "$lc" in *italic*|*oblique*) style=italic ;; esac
+
+            ext="${lc##*.}"
+            case "$ext" in
+                woff2) fmt=woff2;    mime="font/woff2" ;;
+                woff)  fmt=woff;     mime="font/woff" ;;
+                ttf)   fmt=truetype; mime="font/ttf" ;;
+                otf)   fmt=opentype; mime="font/otf" ;;
+                *) continue ;;
+            esac
+
+            b64=$(base64 < "$f" | tr -d '\n')
+            face_css+="@font-face{font-family:'${family}';font-style:${style};font-weight:${weight};font-display:swap;src:url(data:${mime};base64,${b64}) format('${fmt}');}"
+            embedded=$((embedded + 1))
+        done
+        shopt -u nullglob nocaseglob
+    fi
+
+    # Apply the family to RTL text. Fallbacks cover Hebrew/Latin glyphs the
+    # chosen font may lack; code stays monospace. (Selectors use single quotes.)
+    face_css+="[dir='rtl'],[dir='rtl'] *{font-family:'${family}',Tahoma,-apple-system,system-ui,sans-serif!important}"
+    face_css+="[dir='rtl'] pre,[dir='rtl'] code,[dir='rtl'] pre *,[dir='rtl'] code *{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace!important}"
+
+    {
+        printf '\n// --- CLAUDE RTL FONT START ---\n'
+        printf ';(function(){if(typeof document==="undefined")return;function add(){if(document.getElementById("claude-rtl-font"))return;if(!document.head&&!document.documentElement)return;var s=document.createElement("style");s.id="claude-rtl-font";s.textContent="%s";(document.head||document.documentElement).appendChild(s);}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",add);}else{add();}})();\n' "$face_css"
+        printf '// --- CLAUDE RTL FONT END ---\n'
+    } >> "$header"
+
+    if [ "$embedded" -gt 0 ]; then
+        success "RTL font: \"$family\" — embedded $embedded file(s) from fonts/ as base64 data: URIs."
+    else
+        warn "RTL font: \"$family\" — no files in fonts/, relying on an installed font of that name."
+    fi
+}
+
+# ---------------------------------------------------------------------------
 # Install
 # ---------------------------------------------------------------------------
 install_patch() {
@@ -176,6 +268,15 @@ install_patch() {
     asar_cmd extract "$PATCHED_ASAR" "$TMP_DIR/app"
     success "Extracted."
 
+    # --- Build the combined header (RTL JS + Vazirmatn @font-face) ---
+    # The font is embedded as a base64 data: URI rather than loaded from a CDN
+    # or a local file: Claude's CSP is "font-src 'self' data:" in the main window
+    # and "font-src data:" in the artifact preview sandbox, with connect-src 'none'
+    # — so external hosts are blocked and only data: URIs work in every context.
+    HEADER_FILE="$TMP_DIR/rtl-header.js"
+    cp "$PAYLOAD_FILE" "$HEADER_FILE"
+    build_font_injector "$HEADER_FILE"
+
     # --- Inject RTL JS ---
     step "Injecting RTL code..."
     BUILD_DIR="$TMP_DIR/app/.vite/build"
@@ -194,8 +295,8 @@ install_patch() {
             continue
         fi
 
-        # Prepend payload to each JS file
-        cat "$PAYLOAD_FILE" "$js_file" > "$TMP_DIR/merged.js"
+        # Prepend the combined header (RTL payload + font) to each JS file
+        cat "$HEADER_FILE" "$js_file" > "$TMP_DIR/merged.js"
         mv "$TMP_DIR/merged.js" "$js_file"
         INJECTED=$((INJECTED + 1))
         log "Injected into: $(basename "$js_file")"
