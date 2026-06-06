@@ -204,6 +204,9 @@
                 '.katex-display,mjx-container[display="true"],.math-display{text-align:left!important}',
                 '[dir]{text-align:start!important}[dir="rtl"]{direction:rtl!important}[dir="ltr"]{direction:ltr!important}',
                 '[dir]>*:not([dir]):not(pre):not(code):not(.code-block__code){unicode-bidi:plaintext;text-align:start}'
+                // NOTE: the font for RTL text (font-family on [dir="rtl"]) is injected
+                // separately by patch.sh's build_font_injector, so the font name lives
+                // in one place and stays user-configurable (RTL_FONT_FAMILY / fonts/).
             ].join('');
             document.head.appendChild(s);
         }
