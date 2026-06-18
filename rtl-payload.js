@@ -21,6 +21,8 @@
     if (typeof document === 'undefined') return;
     try {
         var WRITING_SEL = '[data-testid="chat-input"]';
+        var MATH_SEL = '.katex, .katex *, .katex-display, .katex-display *, mjx-container, mjx-container *, math, .math, .math-inline, .math-display';
+        var MATH_BLOCK_SEL = '.katex-display, mjx-container[display="true"], .math-display';
 
         function isRTL(c) {
             var code = c.charCodeAt(0);
@@ -105,6 +107,14 @@
             });
         }
 
+        function forceMathLTR(root) {
+            qsa(root, MATH_SEL).forEach(function(el) {
+                el.dir = 'ltr';
+                el.style.direction = 'ltr';
+                el.style.unicodeBidi = 'isolate';
+            });
+        }
+
         function processText(root) {
             qsa(root, 'p, li, h1, h2, h3, h4, h5, h6, blockquote, td, th, summary, label, dt, dd').forEach(function(el) {
                 if (el.closest(WRITING_SEL) || el.closest('pre') || el.closest('.code-block__code')) return;
@@ -147,7 +157,7 @@
 
         function processContainers(root) {
             qsa(root, 'div, span, button, a, label').forEach(function(el) {
-                if (el.closest('pre') || el.closest('code') || el.closest(WRITING_SEL)) return;
+                if (el.closest('pre') || el.closest('code') || el.closest(MATH_SEL) || el.closest(WRITING_SEL)) return;
                 if (el.querySelector('p, div, ul, ol, h1, h2, h3, h4, h5, h6, pre, table')) return;
                 if (/^(P|LI|H[1-6]|BLOCKQUOTE|TD|TH|UL|OL)$/.test(el.tagName)) return;
                 var text = (el.textContent || '').trim();
@@ -179,6 +189,7 @@
             processContainers(document.body);
             processInput();
             forceCodeLTR(document.body);
+            forceMathLTR(document.body);
         }
 
         function injectStyles() {
@@ -189,6 +200,8 @@
                 'p:not([dir]),li:not([dir]),h1:not([dir]),h2:not([dir]),h3:not([dir]),h4:not([dir]),h5:not([dir]),h6:not([dir]),blockquote:not([dir]),td:not([dir]),th:not([dir]),summary:not([dir]),label:not([dir]),legend:not([dir]),dt:not([dir]),dd:not([dir]),figcaption:not([dir]),caption:not([dir]){unicode-bidi:plaintext!important;text-align:start!important}',
                 'pre,.code-block__code,.relative.group\\/copy{unicode-bidi:embed!important;direction:ltr!important;text-align:left!important}',
                 'code{unicode-bidi:isolate!important;direction:ltr!important}',
+                '.katex,.katex *,.katex-display,.katex-display *,mjx-container,mjx-container *,math,.math,.math-inline,.math-display{direction:ltr!important;unicode-bidi:isolate!important}',
+                '.katex-display,mjx-container[display="true"],.math-display{text-align:left!important}',
                 '[dir]{text-align:start!important}[dir="rtl"]{direction:rtl!important}[dir="ltr"]{direction:ltr!important}',
                 '[dir]>*:not([dir]):not(pre):not(code):not(.code-block__code){unicode-bidi:plaintext;text-align:start}'
             ].join('');
@@ -243,6 +256,7 @@
                             processText(r);
                             processContainers(r);
                             forceCodeLTR(r);
+                            forceMathLTR(r);
                         });
                         processInput();
                     } else {
