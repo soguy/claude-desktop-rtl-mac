@@ -184,17 +184,20 @@ install_patch() {
     fi
 
     # Detect Electron's main-process entry from package.json ("main" field).
-    # The RTL payload is a renderer-side script (touches DOM); injecting it
-    # into the main process file makes Electron fail to spawn any BrowserWindow
-    # at startup, resulting in a black screen / silent crash. As of Claude
-    # Desktop 1.9255.2 the entry is ".vite/build/index.pre.js".
+    # The RTL payload is a renderer-side script: prepending it to the main
+    # process file causes Electron to fail to spawn any BrowserWindow at
+    # startup (black screen / silent crash). As of Claude Desktop 1.9255.2
+    # the entry is ".vite/build/index.pre.js"; reading it from package.json
+    # keeps the patcher forward-compatible if Anthropic renames it.
+    # node is guaranteed to be present here — check_dependencies requires npx,
+    # which only ships with node.
     MAIN_BASENAME=""
-    if [ -f "$TMP_DIR/app/package.json" ] && command -v node &>/dev/null; then
+    if [ -f "$TMP_DIR/app/package.json" ]; then
         MAIN_ENTRY=$(node -p "require('$TMP_DIR/app/package.json').main || ''" 2>/dev/null || echo "")
-        if [ -n "$MAIN_ENTRY" ]; then
-            MAIN_BASENAME=$(basename "$MAIN_ENTRY")
-            log "Detected Electron main-process entry: $MAIN_BASENAME (will be skipped)"
+        if [ -z "$MAIN_ENTRY" ]; then
+            die "Could not read \"main\" field from $TMP_DIR/app/package.json. Claude Desktop's package layout may have changed."
         fi
+        MAIN_BASENAME=$(basename "$MAIN_ENTRY")
     fi
 
     INJECTED=0
