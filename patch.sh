@@ -183,10 +183,31 @@ install_patch() {
         die ".vite/build/ not found in extracted ASAR. Claude Desktop may have changed its internal structure."
     fi
 
+    # Detect Electron's main-process entry from package.json ("main" field).
+    # The RTL payload is a renderer-side script (touches DOM); injecting it
+    # into the main process file makes Electron fail to spawn any BrowserWindow
+    # at startup, resulting in a black screen / silent crash. As of Claude
+    # Desktop 1.9255.2 the entry is ".vite/build/index.pre.js".
+    MAIN_BASENAME=""
+    if [ -f "$TMP_DIR/app/package.json" ] && command -v node &>/dev/null; then
+        MAIN_ENTRY=$(node -p "require('$TMP_DIR/app/package.json').main || ''" 2>/dev/null || echo "")
+        if [ -n "$MAIN_ENTRY" ]; then
+            MAIN_BASENAME=$(basename "$MAIN_ENTRY")
+            log "Detected Electron main-process entry: $MAIN_BASENAME (will be skipped)"
+        fi
+    fi
+
     INJECTED=0
     SKIPPED=0
     for js_file in "$BUILD_DIR"/*.js; do
         [ -f "$js_file" ] || continue
+
+        # Skip Electron main-process entry — injecting there crashes startup.
+        if [ -n "$MAIN_BASENAME" ] && [ "$(basename "$js_file")" = "$MAIN_BASENAME" ]; then
+            log "Skipping $(basename "$js_file") (Electron main process)"
+            SKIPPED=$((SKIPPED + 1))
+            continue
+        fi
 
         # Skip already-patched files (idempotent)
         if grep -q "CLAUDE RTL PATCH START" "$js_file" 2>/dev/null; then
