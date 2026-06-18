@@ -121,6 +121,9 @@ Install Node.js: `brew install node` or download from [nodejs.org](https://nodej
 ### Keychain prompt: "Claude wants to use your confidential information"
 On first launch, macOS will show a dialog asking for your password to allow access to **"Claude Safe Storage"** in your keychain. **This is safe to approve.** Claude Desktop uses Electron's `safeStorage` API to encrypt local data (like your login session). Since the patched copy has a different code signature than the original, macOS asks you to re-authorize access. This is a one-time prompt — macOS remembers the approval for future launches.
 
+### Blank window on the very first launch
+After approving the keychain prompt, you may see a blank/black window that never finishes loading. This is a one-time startup quirk: the renderer process is blocked while the keychain dialog is on screen, and on a fresh signature it sometimes doesn't recover from that pause. **Quit `Claude-RTL` and reopen it** — the second launch finds the keychain entries already approved and comes up normally. You should not see this again on subsequent launches.
+
 ### macOS Gatekeeper warning
 Since the app is ad-hoc signed (not signed by Anthropic), macOS may show a warning on first launch. Right-click → Open to bypass it, or go to System Settings → Privacy & Security → Open Anyway.
 
