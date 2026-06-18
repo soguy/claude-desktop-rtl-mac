@@ -34,18 +34,21 @@ The whole pipeline lives in [patch.sh](patch.sh) — a single bash script with `
 
 ## RTL payload (rtl-payload.js)
 
-A self-contained IIFE wrapped in `// --- CLAUDE RTL PATCH START ---` / `--- END ---` markers (the start marker is what `patch.sh` greps for to skip already-patched files). Bails out early if `document` is undefined so it's safe to prepend to any renderer bundle, including ones that may run in a non-DOM context. Uses a `MutationObserver` to handle Claude's streamed responses and force-keeps `<pre>`/`<code>` LTR. When editing payload behavior, preserve the start/end marker comments — removing them breaks idempotency. `injectStyles()` also sets `font-family:"Vazirmatn",…` on every `[dir="rtl"]` element (keeping `pre`/`code` monospace); the actual `@font-face` is injected separately (see below).
+A self-contained IIFE wrapped in `// --- CLAUDE RTL PATCH START ---` / `--- END ---` markers (the start marker is what `patch.sh` greps for to skip already-patched files). Bails out early if `document` is undefined so it's safe to prepend to any renderer bundle, including ones that may run in a non-DOM context. Uses a `MutationObserver` to handle Claude's streamed responses and force-keeps `<pre>`/`<code>` LTR. When editing payload behavior, preserve the start/end marker comments — removing them breaks idempotency. The font-family for RTL text is *not* set here — it's injected by `build_font_injector` only when the user opts in (see below) so the family name has a single source of truth.
 
 ## RTL font (fonts/ + build_font_injector)
 
-RTL text is rendered with a configurable font; the bundled default is Vazirmatn ([rastikerdar/vazirmatn](https://github.com/rastikerdar/vazirmatn), OFL — see [fonts/OFL.txt](fonts/OFL.txt)). The font is **embedded as a base64 `data:` URI**, not loaded from a CDN or a local file. This is forced by Claude's enforced CSP: the main window is `font-src 'self' data:` with `connect-src 'none'`, and the artifact-preview sandbox is `font-src data:` — so external hosts (Google Fonts/jsDelivr) are blocked and a `data:` URI is the only source that works in every context.
+Font replacement is **opt-in, not on by default** — the patch leaves Claude's font alone unless the user passes `--font NAME` (or sets `RTL_FONT_FAMILY=NAME`). When opted in, the font is **embedded as a base64 `data:` URI**, not loaded from a CDN or a local file. This is forced by Claude's enforced CSP: the main window is `font-src 'self' data:` with `connect-src 'none'`, and the artifact-preview sandbox is `font-src data:` — so external hosts (Google Fonts/jsDelivr) are blocked and a `data:` URI is the only source that works in every context.
 
-`build_font_injector` ([patch.sh](patch.sh)) auto-discovers every `*.woff2/*.woff/*.ttf/*.otf` in `fonts/`, guesses weight/style from each filename (`-Bold`, `-Light`, `-Italic`, …), base64-encodes it into an `@font-face` for the `$RTL_FONT_FAMILY` family, appends a rule applying that family to `[dir="rtl"]` (keeping `pre`/`code` monospace), and wraps it all in a guarded IIFE (`// --- CLAUDE RTL FONT START/END ---`) on the combined header. The font-family application lives **only** here (not in `rtl-payload.js`) so the family name has a single source of truth.
+`build_font_injector` ([patch.sh](patch.sh)) is a no-op when `$RTL_FONT_FAMILY` is empty. When set, it auto-discovers every `*.woff2/*.woff/*.ttf/*.otf` in `fonts/`, guesses weight/style from each filename (`-Bold`, `-Light`, `-Italic`, …), base64-encodes it into an `@font-face` for the `$RTL_FONT_FAMILY` family, appends a rule applying that family to `[dir="rtl"]` (keeping `pre`/`code` monospace), and wraps it all in a guarded IIFE (`// --- CLAUDE RTL FONT START/END ---`) on the combined header.
 
-User customization (all without code edits):
-- **Different bundled font:** replace the files in `fonts/` with your own and set the matching name via `RTL_FONT_FAMILY` — they're embedded, so the font works even if not installed.
-- **Installed font, no files:** `RTL_FONT_FAMILY="B Nazanin" ./patch.sh --install` with no matching files in `fonts/` uses an already-installed font of that name.
-- **Disable:** `RTL_FONT_FAMILY="" ./patch.sh --install` skips font replacement and keeps Claude's default font.
+User opt-in paths (all without code edits):
+- **CLI flag:** `./patch.sh --install --font Vazirmatn` — bundled Vazirmatn (Persian/Arabic, OFL — see [fonts/OFL.txt](fonts/OFL.txt)).
+- **Different bundled font:** drop your own files in `fonts/` and pass `--font "<family-name>"` — embedded, so works even if not installed system-wide.
+- **Installed font, no files:** `--font "B Nazanin"` with no matching files in `fonts/` uses an already-installed font of that name.
+- **Env var alternative:** `RTL_FONT_FAMILY=Vazirmatn ./patch.sh --install` — equivalent to `--font`. The CLI flag overrides the env var when both are set.
+
+Note: Vazirmatn covers Persian/Arabic/Latin but **not Hebrew** — Hebrew text falls through to the system Hebrew font. Hebrew users wanting a custom font should bundle one with Hebrew glyphs (Heebo, Rubik, Assistant, etc.) in `fonts/`.
 
 The family name is sanitized (quotes/backslashes stripped) before being embedded in the CSS/JS, and all generated CSS uses single quotes so it stays valid inside the double-quoted JS string literal.
 

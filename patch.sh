@@ -26,14 +26,17 @@ PAYLOAD_FILE="$SCRIPT_DIR/rtl-payload.js"
 ICON_FILE="$SCRIPT_DIR/icon.icns"
 FONTS_DIR="$SCRIPT_DIR/fonts"
 
-# Font used for RTL (Hebrew/Arabic/Persian) text. Vazirmatn is the bundled
-# default, but anyone can pick their own:
-#   * Replace the files in fonts/ with your own .woff2/.woff/.ttf/.otf — they
-#     get embedded so the font works without being installed on the system.
-#   * Or set the family name:  RTL_FONT_FAMILY="B Nazanin" ./patch.sh --install
-#     (with no matching files in fonts/, an already-installed font is used).
-#   * Set RTL_FONT_FAMILY="" to disable font replacement and keep Claude's font.
-RTL_FONT_FAMILY="${RTL_FONT_FAMILY-Vazirmatn}"
+# Font used for RTL (Hebrew/Arabic/Persian) text. Disabled by default — RTL
+# text keeps Claude's default font. Opt in either way:
+#   * Command line:  ./patch.sh --install --font Vazirmatn
+#   * Environment:   RTL_FONT_FAMILY=Vazirmatn ./patch.sh --install
+# Vazirmatn (Persian/Arabic, OFL) is bundled in fonts/ — pass --font Vazirmatn
+# to embed it. To use a different font, drop your own .woff2/.woff/.ttf/.otf
+# files in fonts/ and pass --font "<family-name>" (the embedded files mean it
+# works even if the font isn't installed on the system). With no matching files
+# in fonts/ the patch falls back to an already-installed font of that name.
+# The --font flag overrides RTL_FONT_FAMILY when both are set.
+RTL_FONT_FAMILY="${RTL_FONT_FAMILY-}"
 
 SOURCE_APP="/Applications/Claude.app"
 PATCHED_APP="$HOME/Applications/Claude-RTL.app"
@@ -151,7 +154,7 @@ build_font_injector() {
     family="${family//\'/}"
 
     if [ -z "$family" ]; then
-        log "RTL_FONT_FAMILY is empty — leaving RTL text in Claude's default font."
+        log "No font selected (default) — RTL text keeps Claude's font. Use --font NAME to opt in."
         return 0
     fi
 
@@ -468,13 +471,18 @@ usage() {
     echo ""
     echo -e "${BOLD}Claude Desktop RTL Patcher for macOS${NC}"
     echo ""
-    echo "Usage: $0 [OPTION]"
+    echo "Usage: $0 [OPTION] [--font NAME]"
     echo ""
     echo "Options:"
-    echo "  --install     Install the RTL patch (creates ~/Applications/Claude-RTL.app)"
-    echo "  --uninstall   Remove the patched app"
-    echo "  --status      Show current patch status"
-    echo "  --help        Show this help message"
+    echo "  --install         Install the RTL patch (creates ~/Applications/Claude-RTL.app)"
+    echo "  --uninstall       Remove the patched app"
+    echo "  --status          Show current patch status"
+    echo "  --font NAME       Use NAME as the font for RTL (Hebrew/Arabic/Persian) text."
+    echo "                    Default: no font change. Vazirmatn (Persian/Arabic) is bundled in"
+    echo "                    fonts/ and can be enabled with --font Vazirmatn. Drop your own"
+    echo "                    .woff2/.woff/.ttf/.otf files in fonts/ to bundle other fonts."
+    echo "                    Equivalent: RTL_FONT_FAMILY=NAME ./patch.sh --install"
+    echo "  --help            Show this help message"
     echo ""
     echo "If no option is given, an interactive menu is shown."
     echo ""
@@ -507,11 +515,38 @@ interactive_menu() {
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-case "${1:-}" in
+# Parse args. --font NAME may appear before or after the action flag and
+# overrides RTL_FONT_FAMILY. Action flags are mutually exclusive.
+ACTION=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --install|--uninstall|--status)
+            [ -n "$ACTION" ] && { err "Multiple action flags given: $ACTION and $1"; exit 1; }
+            ACTION="$1"; shift ;;
+        --help|-h)
+            usage; exit 0 ;;
+        --font)
+            [ $# -lt 2 ] && { err "--font requires a font family name (e.g. --font Vazirmatn)"; exit 1; }
+            RTL_FONT_FAMILY="$2"; shift 2 ;;
+        --font=*)
+            RTL_FONT_FAMILY="${1#--font=}"; shift ;;
+        "")
+            shift ;;
+        *)
+            err "Unknown option: $1"; usage; exit 1 ;;
+    esac
+done
+
+case "$ACTION" in
     --install)   install_patch ;;
     --uninstall) uninstall_patch ;;
     --status)    show_status ;;
-    --help|-h)   usage ;;
-    "")          interactive_menu ;;
-    *)           err "Unknown option: $1"; usage; exit 1 ;;
+    "")
+        # If --font was given without an action, the user clearly wanted a
+        # flag-driven invocation — don't silently drop into the menu.
+        if [ -n "$RTL_FONT_FAMILY" ]; then
+            err "--font requires an action flag (e.g. --install --font $RTL_FONT_FAMILY)."
+            exit 1
+        fi
+        interactive_menu ;;
 esac
