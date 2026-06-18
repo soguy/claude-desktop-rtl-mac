@@ -21,8 +21,7 @@
     if (typeof document === 'undefined') return;
     try {
         var WRITING_SEL = '[data-testid="chat-input"]';
-        var MATH_SEL = '.katex, .katex *, .katex-display, .katex-display *, mjx-container, mjx-container *, math, .math, .math-inline, .math-display';
-        var MATH_BLOCK_SEL = '.katex-display, mjx-container[display="true"], .math-display';
+        var MATH_SEL = '.katex, .katex-display, mjx-container, math, .math, .math-inline, .math-display';
 
         function isRTL(c) {
             var code = c.charCodeAt(0);
@@ -108,10 +107,11 @@
         }
 
         function forceMathLTR(root) {
+            // CSS in injectStyles() already enforces direction:ltr and unicode-bidi:isolate
+            // for math; we only need the dir attribute on the outer container so the
+            // detector's closest(MATH_SEL) check has something to find on descendants.
             qsa(root, MATH_SEL).forEach(function(el) {
                 el.dir = 'ltr';
-                el.style.direction = 'ltr';
-                el.style.unicodeBidi = 'isolate';
             });
         }
 
@@ -200,7 +200,7 @@
                 'p:not([dir]),li:not([dir]),h1:not([dir]),h2:not([dir]),h3:not([dir]),h4:not([dir]),h5:not([dir]),h6:not([dir]),blockquote:not([dir]),td:not([dir]),th:not([dir]),summary:not([dir]),label:not([dir]),legend:not([dir]),dt:not([dir]),dd:not([dir]),figcaption:not([dir]),caption:not([dir]){unicode-bidi:plaintext!important;text-align:start!important}',
                 'pre,.code-block__code,.relative.group\\/copy{unicode-bidi:embed!important;direction:ltr!important;text-align:left!important}',
                 'code{unicode-bidi:isolate!important;direction:ltr!important}',
-                '.katex,.katex *,.katex-display,.katex-display *,mjx-container,mjx-container *,math,.math,.math-inline,.math-display{direction:ltr!important;unicode-bidi:isolate!important}',
+                '.katex,.katex-display,mjx-container,math,.math,.math-inline,.math-display{direction:ltr!important;unicode-bidi:isolate!important}',
                 '.katex-display,mjx-container[display="true"],.math-display{text-align:left!important}',
                 '[dir]{text-align:start!important}[dir="rtl"]{direction:rtl!important}[dir="ltr"]{direction:ltr!important}',
                 '[dir]>*:not([dir]):not(pre):not(code):not(.code-block__code){unicode-bidi:plaintext;text-align:start}'
