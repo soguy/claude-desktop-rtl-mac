@@ -9,6 +9,7 @@ Adds automatic right-to-left (RTL) text support to [Claude Desktop](https://clau
 - **Chat input**: automatically switches to RTL alignment when you type Hebrew/Arabic
 - **Claude's responses**: detects RTL text in real-time as responses stream in
 - **Code blocks**: always stay LTR — code formatting is never affected
+- **Math expressions**: LaTeX/KaTeX, MathJax, and MathML always stay LTR — equations are never mirrored
 - **Mixed content**: smart 3-layer detection handles sentences mixing Hebrew/Arabic and English
 - **Non-destructive**: creates a patched *copy* of Claude.app — the original is never modified
 - **Distinct icon**: the patched app has an "RTL" badge on its icon so you can tell them apart at a glance
