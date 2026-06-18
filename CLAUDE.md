@@ -26,7 +26,7 @@ The whole pipeline lives in [patch.sh](patch.sh) — a single bash script with `
 1. `cp -R` the source app to `~/Applications/Claude-RTL.app`.
 2. Replace `Contents/Resources/electron.icns` with `icon.icns` and **delete** `CFBundleIconName` from `Info.plist` — macOS prefers the asset-catalog icon over the `.icns` file unless that key is removed ([patch.sh:162](patch.sh#L162)).
 3. Set `CFBundleDisplayName=Claude-RTL`. Do **not** change `CFBundleName` — Electron's fuse lookup reads `CFBundleName` and changing it breaks the next step ([patch.sh:169](patch.sh#L169)).
-4. `asar extract` → prepend `rtl-payload.js` to every `.js` file under `.vite/build/` **except the Electron main-process entry** (read from the extracted `package.json`'s `"main"` field, currently `index.pre.js`) → `asar pack`. Injecting the payload into the main process makes Electron fail to spawn any `BrowserWindow` at startup (black-screen launch); skipping that one file is the fix. The injection is also skipped per-file if the `CLAUDE RTL PATCH START` marker is already present ([patch.sh:188](patch.sh#L188)).
+4. `asar extract` → prepend a combined header (`rtl-payload.js` + an optional `@font-face` injector built by `build_font_injector`) to every `.js` file under `.vite/build/` **except the Electron main-process entry** (read from the extracted `package.json`'s `"main"` field, currently `index.pre.js`) → `asar pack`. Injecting the payload into the main process makes Electron fail to spawn any `BrowserWindow` at startup (black-screen launch); skipping that one file is the fix. The font injector only runs when `--font NAME` (or `RTL_FONT_FAMILY=NAME`) is set — the default is no font replacement. The injection is also skipped per-file if the `CLAUDE RTL PATCH START` marker is already present ([patch.sh:188](patch.sh#L188)).
 5. `@electron/fuses write … EnableEmbeddedAsarIntegrityValidation=off`. **Required** — Electron validates the ASAR hash at startup and the modified archive will crash the app without this.
 6. `codesign --force --deep --sign - --entitlements <plist>` (ad-hoc). The original Anthropic signature is invalidated by the ASAR/fuse changes; ad-hoc signing is what lets macOS launch the modified bundle. Entitlements are extracted from `$SOURCE_APP` and re-applied — without them, runtime entitlement checks fail (notably Cowork, which calls `@ant/claude-swift`'s VM check and shows "installation appears to be corrupted" when `com.apple.security.virtualization` is missing). Three team-id-coupled keys are stripped before re-signing: `com.apple.application-identifier`, `com.apple.developer.team-identifier`, `keychain-access-groups` — they reference Anthropic's team ID `Q6L2SF6YDW` and macOS rejects them under an ad-hoc signature.
 
@@ -34,7 +34,23 @@ The whole pipeline lives in [patch.sh](patch.sh) — a single bash script with `
 
 ## RTL payload (rtl-payload.js)
 
-A self-contained IIFE wrapped in `// --- CLAUDE RTL PATCH START ---` / `--- END ---` markers (the start marker is what `patch.sh` greps for to skip already-patched files). Bails out early if `document` is undefined so it's safe to prepend to any renderer bundle, including ones that may run in a non-DOM context. Uses a `MutationObserver` to handle Claude's streamed responses and force-keeps `<pre>`/`<code>` LTR. When editing payload behavior, preserve the start/end marker comments — removing them breaks idempotency.
+A self-contained IIFE wrapped in `// --- CLAUDE RTL PATCH START ---` / `--- END ---` markers (the start marker is what `patch.sh` greps for to skip already-patched files). Bails out early if `document` is undefined so it's safe to prepend to any renderer bundle, including ones that may run in a non-DOM context. Uses a `MutationObserver` to handle Claude's streamed responses and force-keeps `<pre>`/`<code>` LTR. When editing payload behavior, preserve the start/end marker comments — removing them breaks idempotency. The font-family for RTL text is *not* set here — it's injected by `build_font_injector` only when the user opts in (see below) so the family name has a single source of truth.
+
+## RTL font (fonts/ + build_font_injector)
+
+Font replacement is **opt-in, not on by default** — the patch leaves Claude's font alone unless the user passes `--font NAME` (or sets `RTL_FONT_FAMILY=NAME`). When opted in, the font is **embedded as a base64 `data:` URI**, not loaded from a CDN or a local file. This is forced by Claude's enforced CSP: the main window is `font-src 'self' data:` with `connect-src 'none'`, and the artifact-preview sandbox is `font-src data:` — so external hosts (Google Fonts/jsDelivr) are blocked and a `data:` URI is the only source that works in every context.
+
+`build_font_injector` ([patch.sh](patch.sh)) is a no-op when `$RTL_FONT_FAMILY` is empty. When set, it auto-discovers every `*.woff2/*.woff/*.ttf/*.otf` in `fonts/`, guesses weight/style from each filename (`-Bold`, `-Light`, `-Italic`, …), base64-encodes it into an `@font-face` for the `$RTL_FONT_FAMILY` family, appends a rule applying that family to `[dir="rtl"]` (keeping `pre`/`code` monospace), and wraps it all in a guarded IIFE (`// --- CLAUDE RTL FONT START/END ---`) on the combined header.
+
+User opt-in paths (all without code edits):
+- **CLI flag:** `./patch.sh --install --font Vazirmatn` — bundled Vazirmatn (Persian/Arabic, OFL — see [fonts/OFL.txt](fonts/OFL.txt)).
+- **Different bundled font:** drop your own files in `fonts/` and pass `--font "<family-name>"` — embedded, so works even if not installed system-wide.
+- **Installed font, no files:** `--font "B Nazanin"` with no matching files in `fonts/` uses an already-installed font of that name.
+- **Env var alternative:** `RTL_FONT_FAMILY=Vazirmatn ./patch.sh --install` — equivalent to `--font`. The CLI flag overrides the env var when both are set.
+
+Note: Vazirmatn covers Persian/Arabic/Latin but **not Hebrew** — Hebrew text falls through to the system Hebrew font. Hebrew users wanting a custom font should bundle one with Hebrew glyphs (Heebo, Rubik, Assistant, etc.) in `fonts/`.
+
+The family name is sanitized (quotes/backslashes stripped) before being embedded in the CSS/JS, and all generated CSS uses single quotes so it stays valid inside the double-quoted JS string literal.
 
 ## Things that will trip you up
 

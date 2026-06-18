@@ -62,6 +62,22 @@ That's it. A patched copy is created at `~/Applications/Claude-RTL.app` (your ho
 ./patch.sh --help
 ```
 
+### Optional: custom font for RTL text
+
+By default the patch leaves Claude's font alone — only direction is changed. If you want a dedicated font for Hebrew/Arabic/Persian text (and especially if Claude's default font has poor Persian/Arabic glyphs), opt in with `--font NAME`:
+
+```bash
+# Use the bundled Vazirmatn font (Persian/Arabic, OFL licensed — see fonts/OFL.txt)
+./patch.sh --install --font Vazirmatn
+
+# Use any font already installed on your system
+./patch.sh --install --font "B Nazanin"
+```
+
+Bundled fonts get embedded as base64 `data:` URIs (Claude's CSP blocks external font loads), so they work even if not installed on the system. To bundle a different font, drop your own `.woff2/.woff/.ttf/.otf` files into `fonts/` and pass `--font "<family-name>"`. Code blocks always stay monospace regardless of the chosen font.
+
+> **Hebrew users:** Vazirmatn doesn't ship Hebrew glyphs — Hebrew falls through to the system Hebrew font, so `--font Vazirmatn` only affects Latin glyphs in your Hebrew sentences. For Hebrew-first use, leave the default off or bundle a Hebrew-friendly font (e.g. Heebo, Rubik, Assistant) in `fonts/`.
+
 ## How it works
 
 The patcher performs these steps:
