@@ -43,6 +43,8 @@ cd claude-desktop-rtl-mac
 
 That's it. A patched copy is created at `~/Applications/Claude-RTL.app` (your home folder, not `/Applications/`) and launches automatically.
 
+> **Run one app at a time.** `Claude.app` and `Claude-RTL.app` share the same profile (`~/Library/Application Support/Claude`). If both are open, the second one cannot open the storage the first one holds locked and resets it, so local data such as IndexedDB and web storage is lost. Quit the original (Cmd+Q) before opening Claude-RTL, and the other way round. The patcher will not auto-launch Claude-RTL while the original is running.
+
 ## Usage
 
 ```bash
