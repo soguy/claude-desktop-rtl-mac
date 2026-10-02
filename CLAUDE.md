@@ -55,6 +55,7 @@ The family name is sanitized (quotes/backslashes stripped) before being embedded
 ## Things that will trip you up
 
 - **Don't patch `/Applications/Claude.app`.** That bundle is root-owned and protected by macOS App Management; modifying it would require sudo and would also break Anthropic's auto-updates. The "copy to `~/Applications/`" design is the whole point.
+- **Never run the original and the patched copy at once.** They share `~/Library/Application Support/Claude` and Claude takes no single-instance lock, so the second app resets the storage it cannot lock (IndexedDB, web storage). `original_claude_running` in [patch.sh](patch.sh) skips the auto-launch when the original is up; keep that guard.
 - **Claude updates ≠ patched copy updates.** Anthropic's auto-updater only updates the original. After a Claude update the user must re-run `./patch.sh --install` to rebuild the patched copy from the new version.
 - **`.vite/build/` is the injection target** — if Anthropic restructures the ASAR, the script dies with a clear error at [patch.sh:182](patch.sh#L182). That's the first place to look when a new Claude version breaks the patch.
 - **Keychain re-auth is expected on first launch** of the patched copy. Different code signature ⇒ macOS asks the user to re-approve "Claude Safe Storage" access. Not a bug.

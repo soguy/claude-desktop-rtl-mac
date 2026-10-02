@@ -137,6 +137,16 @@ quit_claude_rtl() {
     fi
 }
 
+# Both apps share one profile (~/Library/Application Support/Claude) and Claude
+# takes no single-instance lock, so a second app on that profile cannot open the
+# storage the first one holds locked and resets it instead (IndexedDB, web
+# storage). Never start the patched copy while the original is running.
+# -a: macOS pgrep skips its own ancestors by default, which would miss Claude
+# when this script runs from a terminal inside Claude itself.
+original_claude_running() {
+    pgrep -a -f "$SOURCE_APP/Contents/MacOS/" &>/dev/null
+}
+
 # ---------------------------------------------------------------------------
 # Font injector
 # ---------------------------------------------------------------------------
@@ -387,7 +397,13 @@ install_patch() {
 
     # --- Launch ---
     step "Launching Claude-RTL..."
-    open "$PATCHED_APP"
+    if original_claude_running; then
+        warn "The original Claude is running, so Claude-RTL was not opened."
+        warn "Both apps share one profile; running them together can wipe its local data."
+        log "Quit Claude (Cmd+Q), then open: $PATCHED_APP"
+    else
+        open "$PATCHED_APP"
+    fi
 
     echo -e "\n${BOLD}${GREEN}=======================================================${NC}"
     echo -e "${BOLD}${GREEN}     PATCH INSTALLED SUCCESSFULLY!${NC}"
